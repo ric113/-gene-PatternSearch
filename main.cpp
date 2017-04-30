@@ -1,6 +1,3 @@
-// bucket 中的leaves改用double pointer實作.
-
-
 #include <iostream>
 #include <map>
 #include <fstream>
@@ -10,6 +7,7 @@
 using namespace std;
 
 #define SEQ_NUM 50
+#define PATTERN_LEN 15
 
 typedef struct positionInfo{
 	int seq;		// 0 ~ 49 ;
@@ -37,84 +35,12 @@ typedef struct bucket{
 
 }Bucket;
 
-
-void tracePath(struct patternNode *leaf)
-{
-	struct patternNode *currentNode = leaf;
-	cout << "node tree :" << endl;
-	cout << "leaf : " << leaf->pattern << endl;
-
-	while(currentNode != NULL)
-	{
-
-		// cout << "In loop" << endl;
-		cout << currentNode->pattern << ", depth :" << currentNode->depth << " - ";
-		currentNode = currentNode->parentNode;
-	}
-	cout << endl;
-}
-
-void showSeqInfo(SeqInfo *seqInfoTable)
-{
-
-	vector<string>::iterator it ;
-
-	for(int i = 0 ; i < SEQ_NUM ; i ++)
-	{
-		cout << "Seq : " << i << endl ;
-		it = seqInfoTable[i].patterns.begin();
-
-		while(it != seqInfoTable[i].patterns.end())
-		{
-			cout << *it << endl ;
-			it ++ ;
-		}
-
-	}
-}
-
-void showBuckets(vector<Bucket> &buckets)
-{
-	vector<Bucket>::iterator it = buckets.begin();
-
-
-	while(it != buckets.end())
-	{
-		vector<struct patternNode*>::iterator n_it = (*it).leaves.begin();
-		while(n_it != (*it).leaves.end())
-		{
-		    
-			tracePath((*n_it));
-			n_it ++ ;
-		}
-
-
-
-		it ++;
-	}
-}
-
-void showTree(struct patternNode &leaf)
-{
-	struct patternNode *currentNode = &leaf;
-	// cout << pattern << endl;
-	
-	while(currentNode != NULL)
-	{
-		cout << currentNode->pattern <<  " depth : " << currentNode->depth << endl; 
-		currentNode = currentNode->parentNode;
-	}
-}
-
 /**
- * [preProcessing description]
- * initialize All tables .
- * @param patternInfoTable [store Pattern and its infomation]
- * @param seqInfoTable     [store pattern in seqences]
+ *	讀入基因序列, 以Hash來記錄一些序列資訊; 並且用一個vector紀錄各Sequence內有的基因序列 .
  */
-void preProcessing(map<string, PatternInfo> &patternInfoTable,SeqInfo *seqInfoTable)
+void preProcessing(map<string, PatternInfo> &patternInfoTable,SeqInfo *seqInfoTable,string fileName)
 {
-	ifstream fs("q3.data");
+	ifstream fs(fileName);
     
     string line ;
     int controlSeqLength ;
@@ -126,9 +52,9 @@ void preProcessing(map<string, PatternInfo> &patternInfoTable,SeqInfo *seqInfoTa
     {
         controlSeqLength = line.length() ;
 
-        for(int i = 0 ; i < controlSeqLength - 15; i ++)
+        for(int i = 0 ; i < controlSeqLength - PATTERN_LEN; i ++)
         {
-        	subPattern = line.substr(i,15);
+        	subPattern = line.substr(i,PATTERN_LEN);
 
         	PositionInfo newPositionInfo;
         	newPositionInfo.seq = seq;
@@ -140,17 +66,13 @@ void preProcessing(map<string, PatternInfo> &patternInfoTable,SeqInfo *seqInfoTa
        	}
 
        	seq ++ ;
-
-    }
-    
+	}
     fs.close();
-
 }
 
 /**
  * 	Initialize buckets, put Seq1's pattern in as initial state .
  */
-
 void initBucket(vector<Bucket> &buckets,map<string, PatternInfo> &patternInfoTable,SeqInfo *seqInfoTable)
 {
 	SeqInfo seqOne = seqInfoTable[0];
@@ -174,9 +96,7 @@ void initBucket(vector<Bucket> &buckets,map<string, PatternInfo> &patternInfoTab
 		tempBucket.leaves.clear();
 		it ++;
 	}
-
 }
-
 
 /**
  * Compare distance between Two Seq .
@@ -223,19 +143,13 @@ void removeUnupdateBucket(vector<Bucket> &buckets)
 bool validNode(struct patternNode *leaf,string pattern)
 {
 	struct patternNode *currentNode = leaf;
-	int toleranceCount = 0 ;
 	int distance ;
 	
 	while(currentNode != NULL)
 	{
 		distance = patternDistance(pattern, currentNode->pattern);
-		if(distance > 7)
-		{
-			if(distance == 8 && toleranceCount < 0)
-				toleranceCount ++ ;
-			else
-				return false;
-		}
+		if(distance > 7)	// 7是極限, 設8的話花的時間瞬間增長, 但準確率高 .
+			return false;
 		currentNode = currentNode->parentNode;
 	}
 
@@ -280,13 +194,14 @@ void countBranch(vector<Bucket> &buckets)
 }
 
 
-vector<string> reducedSeqPatterns(SeqInfo currentSeq,string rootPattern)
+vector<string> reducedSeqPatterns(SeqInfo currentSeq,string rootPattern,int mutation)
 {
 	vector<string> result;
+	int tolerance = (mutation * 2) + 1;
 
 	for(int i = 0 ; i < currentSeq.patterns.size() ; i ++)
 	{
-		if(patternDistance(currentSeq.patterns.at(i), rootPattern) < 11)
+		if(patternDistance(currentSeq.patterns.at(i), rootPattern) < tolerance)
 			result.push_back(currentSeq.patterns.at(i));
 	}
 
@@ -297,14 +212,14 @@ vector<string> reducedSeqPatterns(SeqInfo currentSeq,string rootPattern)
 /**
  * Insert (SeqNum)'th seqence's patterns to suitable bucket .
  */
-void insertToBuckets(int seqNum,vector<Bucket> &buckets,SeqInfo *seqInfoTable)
+void insertToBuckets(int seqNum,vector<Bucket> &buckets,SeqInfo *seqInfoTable,int mutation)
 {
 	SeqInfo currentSeq = seqInfoTable[seqNum];
 
 	vector<Bucket>::iterator b_it = buckets.begin();
 	while(b_it != buckets.end())
 	{
-		vector<string> reducedCurrentSeqPatterns = reducedSeqPatterns(currentSeq, (*b_it).rootPattern);
+		vector<string> reducedCurrentSeqPatterns = reducedSeqPatterns(currentSeq, (*b_it).rootPattern, mutation);
 
 		vector<string>::iterator p_it = reducedCurrentSeqPatterns.begin();
 		while(p_it != reducedCurrentSeqPatterns.end())
@@ -328,7 +243,7 @@ void insertToBuckets(int seqNum,vector<Bucket> &buckets,SeqInfo *seqInfoTable)
 						(*b_it).leaves.push_back(temp);
 
 						(*b_it).updated = true;
-						
+
 					}
 
 				}
@@ -341,19 +256,9 @@ void insertToBuckets(int seqNum,vector<Bucket> &buckets,SeqInfo *seqInfoTable)
 	}
 }
 
-void vectorAppend(vector<Bucket> &result, vector<Bucket> &appender)
-{
-	vector<Bucket>::iterator it = appender.begin();
-	while(it != appender.end())
-	{
-		result.push_back(*it);
-		it ++;
-	}
-}
-
 string generateRootPattern(vector<Bucket> &buckets)
 {
-	int pointingArray[4][15]  = { {0}, {0}, {0}, {0}};
+	int pointingArray[4][PATTERN_LEN]  = { {0}, {0}, {0}, {0}};
 
 	vector<Bucket>::iterator b_it = buckets.begin();
 	while(b_it != buckets.end())
@@ -387,20 +292,9 @@ string generateRootPattern(vector<Bucket> &buckets)
 		b_it ++ ;
 	}
 
-
-	for(int i = 0 ; i < 4 ; i ++)
-	{
-		for(int j = 0 ; j < 15 ; j ++)
-		{
-			cout << pointingArray[i][j] << " ";
-		}
-
-		cout << endl;
-	}
-
 	string target = "";
 
-	for(int i = 0 ; i < 15 ; i ++)
+	for(int i = 0 ; i < PATTERN_LEN ; i ++)
 	{
 		int max = 0 ;
 		for(int j = 1 ; j < 4 ; j ++)
@@ -418,154 +312,16 @@ string generateRootPattern(vector<Bucket> &buckets)
 			target += "G";
 	}
 
-	cout << target << endl;
+	cout << "Target Pattern : " << target << endl;
 
 	return target;
 
 }
 
-void showCurrentBucket(Bucket &bucket)
-{
-
-	vector<struct patternNode*>::iterator n_it = bucket.leaves.begin();
-	while(n_it != bucket.leaves.end())
-	{
-		tracePath((*n_it));
-		n_it ++ ;
-	}
-}
-
-void DFS_updateCurrentBucketLeaves(Bucket &bucket, int currentDepth)
-{
-	vector<struct patternNode*>::iterator n_it = bucket.leaves.begin();
-	while(n_it != bucket.leaves.end())
-	{
-		if( (*n_it)->depth != currentDepth)
-			bucket.leaves.erase(n_it);
-		else
-			n_it ++ ;
-	}
-}
-
-void DFS_insertToBuckets(vector<Bucket> &buckets,SeqInfo *seqInfoTable)
-{
-	vector<Bucket>::iterator b_it = buckets.begin();
-	int count = 1;
-
-	while(b_it != buckets.end())
-	{
-		cout << "Bucket " << count << endl;
-
-		for(int j = 1 ; j < SEQ_NUM ; j ++)
-		{
-			SeqInfo currentSeq = seqInfoTable[j];
-			vector<string> reducedCurrentSeqPatterns = reducedSeqPatterns(currentSeq, (*b_it).rootPattern);
-
-			vector<string>::iterator p_it = reducedCurrentSeqPatterns.begin();
-			while(p_it != reducedCurrentSeqPatterns.end())
-			{
-				int leavesAmount = (*b_it).leaves.size();
-				
-				for(int i = 0 ; i < leavesAmount ; i ++)
-				{
-					
-
-					if(((*b_it).leaves.at(i))->depth == j - 1)
-					{
-						if(validNode((*b_it).leaves.at(i), (*p_it)))
-						{
-
-							struct patternNode *temp = new patternNode ;
-
-							temp->pattern = (*p_it);
-							temp->depth = j;
-							temp->parentNode = ((*b_it).leaves.at(i));
-
-							(*b_it).leaves.push_back(temp);
-							// cout << temp.parentNode->pattern << "," << temp.parentNode->depth << endl;
-
-							(*b_it).updated = true;
-
-							// tracePath(temp);
-						}
-
-					}
-					
-					// showTree((*l_it));
-				} 
-
-				p_it ++;
-			}
-
-			DFS_updateCurrentBucketLeaves(*b_it,j);
-			// showCurrentBucket(*b_it);
-			cout << "Current Bucket "<< count << "Seq :" << j <<" ,branch # :" << (*b_it).leaves.size() << endl;
-
-			if((*b_it).leaves.size() == 0)
-				break;
-
-		}
-		count ++ ;
-		b_it ++;
-	}
-}
-
-string generateRootPatternByCandidates(vector<string> &candidatePatterns)
-{
-	int pointingArray[4][15]  = { {0}, {0}, {0}, {0}};
-
-	vector<string>::iterator it = candidatePatterns.begin();
-
-	while( it != candidatePatterns.end())
-	{
-		string currentPattern = (*it);
-
-		for(int i = 0 ; i < currentPattern.length() ; i ++)
-		{
-			if(currentPattern[i] == 'A')
-				pointingArray[0][i] ++;
-			else if(currentPattern[i] == 'T')
-				pointingArray[1][i] ++;
-			else if(currentPattern[i] == 'C')
-				pointingArray[2][i] ++;
-			else if(currentPattern[i] == 'G')
-				pointingArray[3][i] ++;
-		}
-
-		it ++;
-	}
-
-	string target = "";
-
-	for(int i = 0 ; i < 15 ; i ++)
-	{
-		int max = 0 ;
-		for(int j = 1 ; j < 4 ; j ++)
-		{
-			max = pointingArray[j][i] > pointingArray[max][i] ? j:max;
-		}
-
-		if(max == 0)
-			target += "A";
-		else if(max == 1)
-			target += "T";
-		else if(max == 2)
-			target += "C";
-		else if(max == 3)
-			target += "G";
-	}
-
-	cout << target << endl;
-
-	return target;
-
-
-}
-
-void Testing(SeqInfo *seqInfoTable,string s)
+void showResult(SeqInfo *seqInfoTable,string s, int mutation)
 {
 	vector<string>::iterator it ;
-	int pos[50];
+	int pos[SEQ_NUM];
 	int posCount ;
 	
 	for(int i = 0 ; i < SEQ_NUM ; i ++)
@@ -573,48 +329,40 @@ void Testing(SeqInfo *seqInfoTable,string s)
 		it = seqInfoTable[i].patterns.begin();
 		posCount = 0 ;
 
+		cout << "Seq " << i << " :{ ";
+
 		while(it != seqInfoTable[i].patterns.end())
 		{
-			if( patternDistance(s,(*it)) <= 7)
+			
+			if( patternDistance(s,(*it)) <= mutation )
 			{
 				pos[i] = posCount;
-				cout << "Seq " << i << " : "<< posCount << ", pattern = " << *it <<endl;
-				break;
+				cout << "\"" << *it << "\" ,"<< posCount << "; "; 
+				// break;
 			}
 
 			posCount ++ ;
 			it ++ ;
 		}
 
-		if(posCount == 986)
-		{
-			cout << "Not the target!" << endl;
-			return;
-		}
-
+		cout << "}" << endl;
 	}
 }
 
-
-int main(int argc, const char * argv[]) 
+void coreProcess(string fileName, int mutation)
 {
-
-    // insert code here...
-    map<string, PatternInfo> patternInfoTable ;
+	map<string, PatternInfo> patternInfoTable ;
     SeqInfo seqInfoTable[SEQ_NUM];
     
-	preProcessing(patternInfoTable, seqInfoTable);
+	preProcessing(patternInfoTable, seqInfoTable, fileName);
 	vector<Bucket> buckets;
 	initBucket(buckets, patternInfoTable, seqInfoTable);
 
-    // DFS_insertToBuckets(buckets,seqInfoTable);
-
     vector<Bucket> cloneBuckets ; // 用來收集最後剩下的Buckets .
 	
-	int searchSeqNum =  49;
-	for(int i = 1 ; i <= searchSeqNum ; i ++)
+	for(int i = 1 ; i < SEQ_NUM ; i ++)
 	{
-		insertToBuckets(i,buckets,seqInfoTable);
+		insertToBuckets(i,buckets,seqInfoTable,mutation);
 			
 		// cout << i << "before - bucket # : " << buckets.size() << endl ;
 		cloneBuckets.assign(buckets.begin(), buckets.end());
@@ -628,14 +376,37 @@ int main(int argc, const char * argv[])
 	
 	}
 
-	cout << "-------" << endl;
-	
-
 	string target = generateRootPattern(cloneBuckets);
-	Testing(seqInfoTable, target);
-
-    return 0;
+	showResult(seqInfoTable, target, mutation);
 }
 
+void problemOneProcess()
+{
+	cout << "Question 1: " << endl;
+	coreProcess("q1.data", 0);
+	cout << "-------" << endl;
+}
 
+void problemTwoProcess()
+{
+	cout << "Question 2: " << endl;
+	coreProcess("q2.data", 5);
+	cout << "-------" << endl;
+}
+
+void problemThreeProcess()
+{
+	cout << "Question 3: " << endl;
+	coreProcess("q3.data", 7);
+	cout << "-------" << endl;
+}
+
+int main(int argc, const char * argv[]) 
+{
+    problemOneProcess();
+    problemTwoProcess();
+    problemThreeProcess();
+
+  	return 0;
+}
 
